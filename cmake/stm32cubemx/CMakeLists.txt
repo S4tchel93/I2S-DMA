@@ -46,9 +46,21 @@ set(STM32_Drivers_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_exti.c
 )
+# SystemView
+set(SYSTEMVIEW_Includes
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../SystemView/Config
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../SystemView/SEGGER
+)
 
+set(SYSTEMVIEW_Src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../SystemView/Sample/NoOS/Config/Cortex-M/SEGGER_SYSVIEW_Config_NoOS.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../SystemView/SEGGER/SEGGER_RTT_printf.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../SystemView/SEGGER/SEGGER_RTT.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../SystemView/SEGGER/SEGGER_RTT_ASM_ARMv7M.s
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../SystemView/SEGGER/SEGGER_SYSVIEW.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../SystemView/SEGGER/Syscalls/SEGGER_RTT_Syscalls_GCC.c
+)
 # Drivers Midllewares
-
 
 
 # Link directories setup
@@ -58,6 +70,7 @@ set(MX_LINK_DIRS
 # Project static libraries
 set(MX_LINK_LIBS 
     STM32_Drivers
+    SystemView
     ${TOOLCHAIN_LINK_LIBRARIES}
     
 )
@@ -70,6 +83,12 @@ target_compile_definitions(stm32cubemx INTERFACE ${MX_Defines_Syms})
 add_library(STM32_Drivers OBJECT)
 target_sources(STM32_Drivers PRIVATE ${STM32_Drivers_Src})
 target_link_libraries(STM32_Drivers PUBLIC stm32cubemx)
+
+# Create SystemView static library
+add_library(SystemView OBJECT)
+target_sources(SystemView PRIVATE ${SYSTEMVIEW_Src})
+target_include_directories(SystemView PUBLIC ${SYSTEMVIEW_Includes})
+target_link_libraries(SystemView PUBLIC stm32cubemx)
 
 
 # Add STM32CubeMX generated application sources to the project

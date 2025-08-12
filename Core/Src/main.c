@@ -19,7 +19,8 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "stdbool.h"
-
+#include "SEGGER_SYSVIEW.h"
+#include "SEGGER_SYSVIEW_Conf.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -72,17 +73,21 @@ static void MX_I2S2_Init(void);
 /*Callbacks to update processing buffers for dual buffering*/
 void HAL_I2SEx_TxRxHalfCpltCallback(I2S_HandleTypeDef *hi2s)
 {
+  SEGGER_SYSVIEW_RecordEnterISR();
   inBufPtr = &adcData[0];
   outBufPtr = &dacData[0];
   dataReadyFlag = true; // Set flag to indicate data is ready for processing
+  SEGGER_SYSVIEW_RecordExitISR();
 }
 
 void HAL_I2SEx_TxRxCpltCallback(I2S_HandleTypeDef *hi2s)
 {
+   SEGGER_SYSVIEW_RecordEnterISR();
   inBufPtr = &adcData[BUFFER_SIZE/2];
   outBufPtr = &dacData[BUFFER_SIZE/2];
 
   dataReadyFlag = true; // Set flag to indicate data is ready for processing
+  SEGGER_SYSVIEW_RecordExitISR();
 }
 
 void processData(void)
@@ -142,8 +147,10 @@ int main(void)
   MX_GPIO_Init();
   MX_DMA_Init();
   MX_I2S2_Init();
-
   /* USER CODE BEGIN 2 */
+  SEGGER_SYSVIEW_Conf();
+  SEGGER_SYSVIEW_OnIdle();
+  //SEGGER_RTT_Init();
   HAL_StatusTypeDef dma_xfer_status = HAL_I2SEx_TransmitReceive_DMA(&hi2s2, (uint16_t *)dacData, (uint16_t *)adcData, BUFFER_SIZE);
   /* USER CODE END 2 */
 
@@ -151,6 +158,7 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+    //SEGGER_RTT_printf(0, "DMA Transfer Status: %d\n", dma_xfer_status);
     if(dataReadyFlag)
     {
       processData(); // Process the data in the buffers
