@@ -1,0 +1,35 @@
+# Build artifacts
+build/
+Debug/
+Release/
+*.o
+*.elf
+*.bin
+*.hex
+*.map
+*.dep
+
+# CMake specific files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# IDE/Editor specific files
+.vscode/
+.settings/
+.idea/
+*.launch
+*.project
+*.cproject
+*.prefs
+*.bak
+*~
+
+# Generated linker scripts (if automatically generated and not intended for version control)
+*.ld
+
+# Other temporary files
+*.log
+*.swp
+*.swo
