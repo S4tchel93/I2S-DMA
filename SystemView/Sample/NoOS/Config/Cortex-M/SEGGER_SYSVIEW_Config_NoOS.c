@@ -53,6 +53,8 @@ Revision: $Rev: 9599 $
 */
 #include "SEGGER_SYSVIEW.h"
 #include "SEGGER_SYSVIEW_Conf.h"
+#include <stdio.h>
+#include <string.h>
 
 // SystemcoreClock can be used in most CMSIS compatible projects.
 // In non-CMSIS projects define SYSVIEW_CPU_FREQ.
@@ -101,6 +103,18 @@ extern unsigned int SystemCoreClock;
 #define NOCYCCNT_BIT              (1uL << 25)                                   // Cycle counter support bit
 #define CYCCNTENA_BIT             (1uL << 0)                                    // Cycle counter enable bit
 
+#define NUM_TASKS 16
+static SEGGER_SYSVIEW_TASKINFO  _aTasks[NUM_TASKS];
+static int                      _NumTasks;
+
+static void _cbSendTaskList(void) {
+  for (int n = 0; n < _NumTasks; n++) {
+    SEGGER_SYSVIEW_SendTaskInfo(&_aTasks[n]);
+  }
+}
+
+static const SEGGER_SYSVIEW_OS_API _NoOSAPI = {NULL, _cbSendTaskList};
+
 /********************************************************************* 
 *
 *       _cbSendSystemDesc()
@@ -109,8 +123,9 @@ extern unsigned int SystemCoreClock;
 *    Sends SystemView description strings.
 */
 static void _cbSendSystemDesc(void) {
-  SEGGER_SYSVIEW_SendSysDesc("N="SYSVIEW_APP_NAME",D="SYSVIEW_DEVICE_NAME);
+  SEGGER_SYSVIEW_SendSysDesc("N="SYSVIEW_APP_NAME",O=NoOS,D="SYSVIEW_DEVICE_NAME);
   SEGGER_SYSVIEW_SendSysDesc("I#15=SysTick");
+  SEGGER_SYSVIEW_SendSysDesc("I#30=I2S2_TX");
 }
 
 /*********************************************************************
@@ -142,6 +157,30 @@ void SEGGER_SYSVIEW_Conf(void) {
   SEGGER_SYSVIEW_Init(SYSVIEW_TIMESTAMP_FREQ, SYSVIEW_CPU_FREQ, 
                       0, _cbSendSystemDesc);
   SEGGER_SYSVIEW_SetRAMBase(SYSVIEW_RAM_BASE);
+}
+
+/*
+ *       SYSVIEW_AddTask()
+ *
+ *  Function description
+ *    Helper function for task creation in a NoOS system
+ */
+void SYSVIEW_AddTask(void* pTask, const char* sName, U32 Prio) {
+  int n;
+  
+  SEGGER_SYSVIEW_OnTaskCreate((U32)pTask);
+
+  if (_NumTasks > NUM_TASKS) {
+    return;
+  }
+  n = _NumTasks;
+  _NumTasks++;
+
+  _aTasks[n].TaskID = (U32)pTask;
+  _aTasks[n].sName  = sName;
+  _aTasks[n].Prio   = Prio;
+  _aTasks[n].StackBase = 0;
+  _aTasks[n].StackSize = 0;
 }
 
 /*************************** End of file ****************************/

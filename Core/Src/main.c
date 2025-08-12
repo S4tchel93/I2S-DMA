@@ -34,6 +34,10 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define BUFFER_SIZE 128
+
+//#define EXEC_TASK(p)  SEGGER_SYSVIEW_OnTaskStartExec((U32)p);         \
+//                      p();                                            \
+//                      SEGGER_SYSVIEW_OnTaskStopReady((U32)p, 0);
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -55,7 +59,7 @@ int16_t dacData[BUFFER_SIZE];
 static volatile int16_t *inBufPtr;
 static volatile int16_t *outBufPtr = &dacData[0];
 
-static bool dataReadyFlag = false;
+static volatile bool dataReadyFlag = false;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -69,20 +73,21 @@ static void MX_I2S2_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
+//void SYSVIEW_AddTask(void* pTask, const char* sName, U32 Prio);
 /*Callbacks to update processing buffers for dual buffering*/
+
 void HAL_I2SEx_TxRxHalfCpltCallback(I2S_HandleTypeDef *hi2s)
 {
-  SEGGER_SYSVIEW_RecordEnterISR();
+  //SEGGER_SYSVIEW_RecordEnterISR();
   inBufPtr = &adcData[0];
   outBufPtr = &dacData[0];
   dataReadyFlag = true; // Set flag to indicate data is ready for processing
-  SEGGER_SYSVIEW_RecordExitISR();
+  //SEGGER_SYSVIEW_RecordExitISR();
 }
 
 void HAL_I2SEx_TxRxCpltCallback(I2S_HandleTypeDef *hi2s)
 {
-   SEGGER_SYSVIEW_RecordEnterISR();
+  SEGGER_SYSVIEW_RecordEnterISR();
   inBufPtr = &adcData[BUFFER_SIZE/2];
   outBufPtr = &dacData[BUFFER_SIZE/2];
 
@@ -97,22 +102,27 @@ void processData(void)
   static float leftOut = 0.0f;
   static float rightOut = 0.0f;
 
+  SEGGER_SYSVIEW_RecordVoid(33);
+  SEGGER_SYSVIEW_Print("DSP: Processing started");
   for(uint8_t i = 0; i < BUFFER_SIZE/2; i += 2)
   {
+    //SEGGER_SYSVIEW_Print("DSP: Processing Left Channel");
     /*Left Channel*/
     leftIn = (float)inBufPtr[i] / 32768.0f; // Normalize to -1.0 to 1.0
     /*Processing should be done here*/
     leftOut = leftIn;
     outBufPtr[i] = (int16_t)(leftOut * 32768.0f); // Scale back to int16_t
 
+    //SEGGER_SYSVIEW_Print("DSP: Processing Right Channel");
     /*Right Channel*/
     rightIn = (float)inBufPtr[i + 1] / 32768.0f; // Normalize to -1.0 to 1.0
     /*Processing should be done here*/
     rightOut = rightIn;
     outBufPtr[i + 1] = (int16_t)(rightOut * 32768.0f); // Scale back to int16_t
   }
-
+  SEGGER_SYSVIEW_Print("DSP: Processing finished");
   dataReadyFlag = false; // Reset data ready flag for next processing cycle
+  SEGGER_SYSVIEW_RecordEndCall(33);
 }
 /* USER CODE END 0 */
 
@@ -149,8 +159,9 @@ int main(void)
   MX_I2S2_Init();
   /* USER CODE BEGIN 2 */
   SEGGER_SYSVIEW_Conf();
+  //SYSVIEW_AddTask(processData, "processData", 10);
   SEGGER_SYSVIEW_OnIdle();
-  //SEGGER_RTT_Init();
+  SEGGER_SYSVIEW_Print("DMA: Starting I2S DMA Transfer");
   HAL_StatusTypeDef dma_xfer_status = HAL_I2SEx_TransmitReceive_DMA(&hi2s2, (uint16_t *)dacData, (uint16_t *)adcData, BUFFER_SIZE);
   /* USER CODE END 2 */
 
@@ -158,17 +169,20 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    //SEGGER_RTT_printf(0, "DMA Transfer Status: %d\n", dma_xfer_status);
     if(dataReadyFlag)
     {
+      //EXEC_TASK(processData);
       processData(); // Process the data in the buffers
     }
     /* USER CODE END WHILE */
-    HAL_GPIO_TogglePin(LD1_GPIO_Port, LD1_Pin);
-    HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
-    HAL_GPIO_TogglePin(LD3_GPIO_Port, LD3_Pin);
+    
     /* USER CODE BEGIN 3 */
-    HAL_Delay(500); // Toggle every 500 ms
+    //SEGGER_SYSVIEW_Print("LEDS: Start toggling");
+    //HAL_GPIO_TogglePin(LD1_GPIO_Port, LD1_Pin);
+    //HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+    //HAL_GPIO_TogglePin(LD3_GPIO_Port, LD3_Pin);
+    //SEGGER_SYSVIEW_Print("LEDS: End toggling");
+    //HAL_Delay(500); // Toggle every 500 ms
   }
   /* USER CODE END 3 */
 }
