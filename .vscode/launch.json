@@ -32,6 +32,23 @@
             //"serverArgs": ["--extload", "path/to/ext/loader.stldr"],
         },
         {
+            "name": "Cortex-Debug J-Link Launch",
+            "type": "cortex-debug",
+            "request": "launch",
+            "servertype": "jlink",
+            "executable": "${command:cmake.launchTargetPath}", // Path to your ELF executable
+            "cwd": "${workspaceFolder}",
+            "device": "STM32F429ZITx", // e.g., "STM32F407VG"
+            "interface": "swd", // or "jtag"
+            "svdFile": "${config:STM32VSCodeExtension.cubeCLT.path}/STMicroelectronics_CMSIS_SVD/STM32F429.svd", // Optional: path to SVD file for peripheral view
+            "runToEntryPoint": "main", // Start execution at main()
+            //"preLaunchTask": "CMake: clean rebuild", // Optional: ensure your project is built before launching
+            "postStartSessionCommands": [
+                "monitor reset", // Optional: reset target after connection
+                "monitor halt" // Optional: halt target after reset
+            ]
+        },
+        {
             "name": "Attach to Microcontroller - ST-Link",
             "cwd": "${workspaceFolder}",
             "type": "cortex-debug",
