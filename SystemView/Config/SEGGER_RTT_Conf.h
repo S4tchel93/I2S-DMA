@@ -102,6 +102,8 @@ Revision: $Rev: 24316 $
   #define SEGGER_RTT_PRINTF_BUFFER_SIZE             (64u)    // Size of buffer for RTT printf to bulk-send chars via RTT     (Default: 64)
 #endif
 
+#define SEGGER_SYSVIEW_RTT_BUFFER_SIZE              (8*1024)
+
 #ifndef   SEGGER_RTT_MODE_DEFAULT
   #define SEGGER_RTT_MODE_DEFAULT                   SEGGER_RTT_MODE_NO_BLOCK_SKIP // Mode for pre-initialized terminal channel (buffer 0)
 #endif

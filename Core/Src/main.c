@@ -35,9 +35,6 @@
 /* USER CODE BEGIN PD */
 #define BUFFER_SIZE 128
 
-//#define EXEC_TASK(p)  SEGGER_SYSVIEW_OnTaskStartExec((U32)p);         \
-//                      p();                                            \
-//                      SEGGER_SYSVIEW_OnTaskStopReady((U32)p, 0);
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -124,6 +121,16 @@ void processData(void)
   dataReadyFlag = false; // Reset data ready flag for next processing cycle
   SEGGER_SYSVIEW_RecordEndCall(33);
 }
+
+void toggleLEDs(void)
+{
+  SEGGER_SYSVIEW_RecordVoid(34);
+  SEGGER_SYSVIEW_Print("LED: Toggling LEDs");
+  HAL_GPIO_TogglePin(LD1_GPIO_Port, LD1_Pin);
+  HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+  HAL_GPIO_TogglePin(LD3_GPIO_Port, LD3_Pin);
+  SEGGER_SYSVIEW_RecordEndCall(34);
+}
 /* USER CODE END 0 */
 
 /**
@@ -157,11 +164,11 @@ int main(void)
   MX_GPIO_Init();
   MX_DMA_Init();
   MX_I2S2_Init();
+
   /* USER CODE BEGIN 2 */
-  SEGGER_SYSVIEW_Conf();
-  //SYSVIEW_AddTask(processData, "processData", 10);
-  SEGGER_SYSVIEW_OnIdle();
-  SEGGER_SYSVIEW_Print("DMA: Starting I2S DMA Transfer");
+  SEGGER_SYSVIEW_Conf();    /* Configure and initialize SystemView  */
+  //SEGGER_SYSVIEW_Start();   /* Starts SystemView recording*/
+  SEGGER_SYSVIEW_OnIdle();  /* Tells SystemView that System is currently in "Idle"*/
   HAL_StatusTypeDef dma_xfer_status = HAL_I2SEx_TransmitReceive_DMA(&hi2s2, (uint16_t *)dacData, (uint16_t *)adcData, BUFFER_SIZE);
   /* USER CODE END 2 */
 
@@ -171,19 +178,12 @@ int main(void)
   {
     if(dataReadyFlag)
     {
-      //EXEC_TASK(processData);
       processData(); // Process the data in the buffers
     }
-    /* USER CODE END WHILE */
-    
-    /* USER CODE BEGIN 3 */
-    //SEGGER_SYSVIEW_Print("LEDS: Start toggling");
-    //HAL_GPIO_TogglePin(LD1_GPIO_Port, LD1_Pin);
-    //HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
-    //HAL_GPIO_TogglePin(LD3_GPIO_Port, LD3_Pin);
-    //SEGGER_SYSVIEW_Print("LEDS: End toggling");
-    //HAL_Delay(500); // Toggle every 500 ms
+    /* USER CODE END WHILE */ 
   }
+  /* USER CODE BEGIN 3 */
+
   /* USER CODE END 3 */
 }
 

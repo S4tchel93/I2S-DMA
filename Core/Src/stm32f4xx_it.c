@@ -184,11 +184,17 @@ void PendSV_Handler(void)
 void SysTick_Handler(void)
 {
   /* USER CODE BEGIN SysTick_IRQn 0 */
-
+  static uint32_t counter = 0;
+  
   /* USER CODE END SysTick_IRQn 0 */
   HAL_IncTick();
   /* USER CODE BEGIN SysTick_IRQn 1 */
-
+  counter++;
+  if (counter >= 1000) // 1 second
+  {
+    counter = 0;
+    toggleLEDs(); // Toggle LEDs every second
+  }
   /* USER CODE END SysTick_IRQn 1 */
 }
 
