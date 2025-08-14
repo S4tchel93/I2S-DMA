@@ -115,22 +115,22 @@ static float Process_Reverb(float inSample) {
 
 float Do_Reverb(float inSample) {
     float sum = inSample;
-	#ifdef REVERB_ENABLE
-    	sum = (1.0f-wet)*sum + wet*Process_Reverb(sum);
-	#endif // REVERB_ENABLE
+#ifdef REVERB_ENABLE
+	sum = (1.0f-wet)*sum + wet*Process_Reverb(sum);
+#endif // REVERB_ENABLE
 
     return sum;
 }
 
 void Reverb_Init(void)
 {
-	#ifdef REVERB_ENABLE
-    	cf0_lim = (int)(time*l_CB0);
-		cf1_lim = (int)(time*l_CB1);
-		cf2_lim = (int)(time*l_CB2);
-		cf3_lim = (int)(time*l_CB3);
-		ap0_lim = (int)(time*l_AP0);
-		ap1_lim = (int)(time*l_AP1);
-		ap2_lim = (int)(time*l_AP2);
-	#endif // REVERB_ENABLE
+#ifdef REVERB_ENABLE
+    cf0_lim = (int)(time*l_CB0);
+	cf1_lim = (int)(time*l_CB1);
+	cf2_lim = (int)(time*l_CB2);
+	cf3_lim = (int)(time*l_CB3);
+	ap0_lim = (int)(time*l_AP0);
+	ap1_lim = (int)(time*l_AP1);
+	ap2_lim = (int)(time*l_AP2);
+#endif // REVERB_ENABLE
 }

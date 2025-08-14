@@ -20,25 +20,18 @@
 #include "main.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include <math.h>
 #include "SEGGER_SYSVIEW.h"
 #include "SEGGER_SYSVIEW_Conf.h"
-#include "reverb.h"
+#include "dsp_configuration.h"
+#include "audio_processing.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-typedef enum I2S_DMA_Callback_State_t {
-  I2S_DMA_CALLBACK_IDLE = 0,
-  I2S_DMA_CALLBACK_HALF = 1,
-  I2S_DMA_CALLBACK_FULL = 2
-} I2S_DMA_Callback_State_t;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define BLOCK_SIZE_U16 128
-#define BLOCK_SIZE_FLOAT BLOCK_SIZE_U16 / 4
 
 /* USER CODE END PD */
 
@@ -52,18 +45,7 @@ DMA_HandleTypeDef hdma_spi2_tx;
 DMA_HandleTypeDef hdma_i2s2_ext_rx;
 
 /* USER CODE BEGIN PV */
-/*Buffers for I2S DMA transfer
-rxBuf and txBuf are used for I2S DMA transfer, l_buf_in and
-r_buf_in are used for processing input samples, l_buf_out and r_buf_out are used for processed output samples
-rxBuf and txBuf are 16-bit buffers, l_buf_in, r_buf_in, l_buf_out and r_buf_out are 32-bit float buffers*/
-uint16_t rxBuf[BLOCK_SIZE_U16*2];
-uint16_t txBuf[BLOCK_SIZE_U16*2];
-float l_buf_in [BLOCK_SIZE_FLOAT*2];
-float r_buf_in [BLOCK_SIZE_FLOAT*2];
-float l_buf_out [BLOCK_SIZE_FLOAT*2];
-float r_buf_out [BLOCK_SIZE_FLOAT*2];
 
-I2S_DMA_Callback_State_t callback_state = I2S_DMA_CALLBACK_IDLE;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -79,93 +61,14 @@ static void MX_I2S2_Init(void);
 /* USER CODE BEGIN 0 */
 //void SYSVIEW_AddTask(void* pTask, const char* sName, U32 Prio);
 /*Callbacks to update processing buffers for dual buffering*/
-
 void HAL_I2SEx_TxRxHalfCpltCallback(I2S_HandleTypeDef *hi2s){
-	callback_state = I2S_DMA_CALLBACK_HALF;
+	audio_SetCallbackState(I2S_DMA_CALLBACK_HALF);
 }
 
 void HAL_I2SEx_TxRxCpltCallback(I2S_HandleTypeDef *hi2s){
   SEGGER_SYSVIEW_RecordEnterISR();
-	callback_state = I2S_DMA_CALLBACK_FULL;
+  audio_SetCallbackState(I2S_DMA_CALLBACK_FULL);
   SEGGER_SYSVIEW_RecordExitISR();
-}
-
-float Do_Distortion (float insample) {
-
-	float threshold_noise = 2000000.0f;
-	float threshold_lower = 10000000.0f;
-	float gain_lower = 2.0f;
-
-	float threshold_higher = 60000000.0f;
-	float gain_higher = 0.5f;
-
-	float outgain = 2.0f;
-
-	if (fabs(insample) < threshold_lower && fabs(insample) > threshold_noise ) return outgain*(insample*gain_lower);
-	if (fabs(insample) > threshold_higher) return outgain*(insample*gain_higher);
-	return outgain*insample;
-}
-
-void processData(void)
-{
-  /*Counters for buffer pointer indexing*/
-  int offset_r_ptr = 0;
-  int offset_w_ptr = 0; 
-  /*Pointer for writing processed samples to output buffer*/
-  int w_ptr = 0;
-
-  if (callback_state != I2S_DMA_CALLBACK_IDLE) {
-    SEGGER_SYSVIEW_RecordVoid(33);
-    SEGGER_SYSVIEW_PrintfHost("DSP: Processing started, callback state: %d", callback_state);
-		//decide if it was half or cplt callback
-		if (callback_state == I2S_DMA_CALLBACK_HALF)
-    {
-      //half callback, so we have to process the first half of the buffers
-		  offset_r_ptr = 0;
-		  offset_w_ptr = 0;
-      //reset write pointer to the beginning of the float buffers
-		  w_ptr = 0;
-		}
-		else if (callback_state == I2S_DMA_CALLBACK_FULL)
-    {
-      //full callback, so we have to process the second half of the buffers
-		  offset_r_ptr = BLOCK_SIZE_U16;
-		  offset_w_ptr = BLOCK_SIZE_FLOAT;
-      //set write pointer to the second half of the float buffers
-		  w_ptr = BLOCK_SIZE_FLOAT;
-		}
-
-		//restore input sample buffer to float array
-		for (int i=offset_r_ptr; i<offset_r_ptr+BLOCK_SIZE_U16; i=i+4)
-    {
-      //convert 16-bit samples to 32-bit float samples
-		  l_buf_in[w_ptr] = (float) ((int) (rxBuf[i]<<16)|rxBuf[i+1]);
-		  r_buf_in[w_ptr] = (float) ((int) (rxBuf[i+2]<<16)|rxBuf[i+3]);
-		  w_ptr++;
-		}
-
-		for (int i=offset_w_ptr; i<offset_w_ptr+BLOCK_SIZE_FLOAT; i++)
-    {   
-      //process input samples with selected effect
-		  l_buf_out[i] = (int) Do_Reverb(l_buf_in[i]);
-		  r_buf_out[i] = (int) Do_Reverb(r_buf_in[i]);
-		}
-
-		//restore processed float-array to output sample-buffer
-		w_ptr = offset_w_ptr;
-		for (int i=offset_r_ptr; i<offset_r_ptr+BLOCK_SIZE_U16; i=i+4) 
-    {
-      //convert 32-bit float samples to 16-bit samples
-			txBuf[i] =  (((int)l_buf_out[w_ptr])>>16)&0xFFFF;
-			txBuf[i+1] = ((int)l_buf_out[w_ptr])&0xFFFF;
-			txBuf[i+2] = (((int)r_buf_out[w_ptr])>>16)&0xFFFF;
-			txBuf[i+3] = ((int)r_buf_out[w_ptr])&0xFFFF;
-			w_ptr++;
-		}
-		callback_state = I2S_DMA_CALLBACK_IDLE;
-    SEGGER_SYSVIEW_Print("DSP: Processing finished");
-    SEGGER_SYSVIEW_RecordEndCall(33);
-	}
 }
 
 void toggleLEDs(void)
@@ -193,7 +96,7 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
- HAL_Init();
+  HAL_Init();
 
   /* USER CODE BEGIN Init */
 
@@ -214,18 +117,16 @@ int main(void)
   SEGGER_SYSVIEW_Conf();    /* Configure and initialize SystemView  */
   SEGGER_SYSVIEW_Start();   /* Starts SystemView recording*/
   SEGGER_SYSVIEW_OnIdle();  /* Tells SystemView that System is currently in "Idle"*/
-
-  Reverb_Init(); //initialize reverb effect
-
+  audio_InitFX(); //Initialize audio effects
   //start i2s with 128 samples transmission => 512*u16 words
-  HAL_I2SEx_TransmitReceive_DMA (&hi2s2, txBuf, rxBuf, BLOCK_SIZE_U16);
+  HAL_I2SEx_TransmitReceive_DMA (&hi2s2, audio_getTxBuf(), audio_getRxBuf(), BLOCK_SIZE_U16);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    processData();
+    processAudio();
   }
 	/* USER CODE END WHILE */
   /* USER CODE BEGIN 3 */
