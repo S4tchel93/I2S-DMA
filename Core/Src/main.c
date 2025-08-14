@@ -18,9 +18,9 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "stdbool.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <math.h>
 #include "SEGGER_SYSVIEW.h"
 #include "SEGGER_SYSVIEW_Conf.h"
 /* USER CODE END Includes */
@@ -32,7 +32,8 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define BUFFER_SIZE 128
+#define BLOCK_SIZE_FLOAT 512
+#define BLOCK_SIZE_U16 2048
 
 /* USER CODE END PD */
 
@@ -47,15 +48,14 @@ DMA_HandleTypeDef hdma_spi2_tx;
 DMA_HandleTypeDef hdma_i2s2_ext_rx;
 
 /* USER CODE BEGIN PV */
-/*For DMA use*/
-int16_t adcData[BUFFER_SIZE];
-int16_t dacData[BUFFER_SIZE];
+uint16_t rxBuf[BLOCK_SIZE_U16*2];
+uint16_t txBuf[BLOCK_SIZE_U16*2];
+float l_buf_in [BLOCK_SIZE_FLOAT*2];
+float r_buf_in [BLOCK_SIZE_FLOAT*2];
+float l_buf_out [BLOCK_SIZE_FLOAT*2];
+float r_buf_out [BLOCK_SIZE_FLOAT*2];
 
-/*For Processing use*/
-static volatile int16_t *inBufPtr;
-static volatile int16_t *outBufPtr = &dacData[0];
-
-static volatile bool dataReadyFlag = false;
+uint8_t callback_state = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -72,53 +72,78 @@ static void MX_I2S2_Init(void);
 //void SYSVIEW_AddTask(void* pTask, const char* sName, U32 Prio);
 /*Callbacks to update processing buffers for dual buffering*/
 
-void HAL_I2SEx_TxRxHalfCpltCallback(I2S_HandleTypeDef *hi2s)
-{
-  //SEGGER_SYSVIEW_RecordEnterISR();
-  inBufPtr = &adcData[0];
-  outBufPtr = &dacData[0];
-  dataReadyFlag = true; // Set flag to indicate data is ready for processing
-  //SEGGER_SYSVIEW_RecordExitISR();
+void HAL_I2SEx_TxRxHalfCpltCallback(I2S_HandleTypeDef *hi2s){
+	callback_state = 1;
 }
 
-void HAL_I2SEx_TxRxCpltCallback(I2S_HandleTypeDef *hi2s)
-{
+void HAL_I2SEx_TxRxCpltCallback(I2S_HandleTypeDef *hi2s){
   SEGGER_SYSVIEW_RecordEnterISR();
-  inBufPtr = &adcData[BUFFER_SIZE/2];
-  outBufPtr = &dacData[BUFFER_SIZE/2];
-
-  dataReadyFlag = true; // Set flag to indicate data is ready for processing
+	callback_state = 2;
   SEGGER_SYSVIEW_RecordExitISR();
+}
+
+float Do_Distortion (float insample) {
+
+	float threshold_noise = 2000000.0f;
+	float threshold_lower = 10000000.0f;
+	float gain_lower = 2.0f;
+
+	float threshold_higher = 60000000.0f;
+	float gain_higher = 0.5f;
+
+	float outgain = 2.0f;
+
+	if (fabs(insample) < threshold_lower && fabs(insample) > threshold_noise ) return outgain*(insample*gain_lower);
+	if (fabs(insample) > threshold_higher) return outgain*(insample*gain_higher);
+	return outgain*insample;
 }
 
 void processData(void)
 {
-  static float leftIn = 0.0f;
-  static float rightIn = 0.0f;
-  static float leftOut = 0.0f;
-  static float rightOut = 0.0f;
+  int offset_r_ptr;
+  int offset_w_ptr, w_ptr;
+  if (callback_state != 0) {
+      SEGGER_SYSVIEW_RecordVoid(33);
+      SEGGER_SYSVIEW_Print("DSP: Processing started");
+		  //decide if it was half or cplt callback
+		  if (callback_state == 1)   {
+			  	  offset_r_ptr = 0;
+			  	  offset_w_ptr = 0;
+			  	  w_ptr = 0;
+			  }
 
-  SEGGER_SYSVIEW_RecordVoid(33);
-  SEGGER_SYSVIEW_Print("DSP: Processing started");
-  for(uint8_t i = 0; i < BUFFER_SIZE/2; i += 2)
-  {
-    //SEGGER_SYSVIEW_Print("DSP: Processing Left Channel");
-    /*Left Channel*/
-    leftIn = (float)inBufPtr[i] / 32768.0f; // Normalize to -1.0 to 1.0
-    /*Processing should be done here*/
-    leftOut = leftIn;
-    outBufPtr[i] = (int16_t)(leftOut * 32768.0f); // Scale back to int16_t
+		  else if (callback_state == 2) {
+			  offset_r_ptr = BLOCK_SIZE_U16;
+			  offset_w_ptr = BLOCK_SIZE_FLOAT;
+			  w_ptr = BLOCK_SIZE_FLOAT;
+		  }
 
-    //SEGGER_SYSVIEW_Print("DSP: Processing Right Channel");
-    /*Right Channel*/
-    rightIn = (float)inBufPtr[i + 1] / 32768.0f; // Normalize to -1.0 to 1.0
-    /*Processing should be done here*/
-    rightOut = rightIn;
-    outBufPtr[i + 1] = (int16_t)(rightOut * 32768.0f); // Scale back to int16_t
-  }
-  SEGGER_SYSVIEW_Print("DSP: Processing finished");
-  dataReadyFlag = false; // Reset data ready flag for next processing cycle
-  SEGGER_SYSVIEW_RecordEndCall(33);
+		  //restore input sample buffer to float array
+		  for (int i=offset_r_ptr; i<offset_r_ptr+BLOCK_SIZE_U16; i=i+4) {
+			  l_buf_in[w_ptr] = (float) ((int) (rxBuf[i]<<16)|rxBuf[i+1]);
+			  r_buf_in[w_ptr] = (float) ((int) (rxBuf[i+2]<<16)|rxBuf[i+3]);
+			  w_ptr++;
+		  }
+
+		  for (int i=offset_w_ptr; i<offset_w_ptr+BLOCK_SIZE_FLOAT; i++) {
+			  l_buf_out[i] = l_buf_in[i];//Do_Distortion(l_buf_in[i]);
+			  r_buf_out[i] = r_buf_in[i];//Do_Distortion(r_buf_in[i]);
+		  }
+
+		  //restore processed float-array to output sample-buffer
+		  w_ptr = offset_w_ptr;
+
+		  for (int i=offset_r_ptr; i<offset_r_ptr+BLOCK_SIZE_U16; i=i+4) {
+				txBuf[i] =  (((int)l_buf_out[w_ptr])>>16)&0xFFFF;
+				txBuf[i+1] = ((int)l_buf_out[w_ptr])&0xFFFF;
+				txBuf[i+2] = (((int)r_buf_out[w_ptr])>>16)&0xFFFF;
+				txBuf[i+3] = ((int)r_buf_out[w_ptr])&0xFFFF;
+				w_ptr++;
+		  }
+		  callback_state = 0;
+      SEGGER_SYSVIEW_Print("DSP: Processing finished");
+      SEGGER_SYSVIEW_RecordEndCall(33);
+	  }
 }
 
 void toggleLEDs(void)
@@ -146,7 +171,7 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
+ HAL_Init();
 
   /* USER CODE BEGIN Init */
 
@@ -163,23 +188,29 @@ int main(void)
   MX_GPIO_Init();
   MX_DMA_Init();
   MX_I2S2_Init();
-  /* USER CODE BEGIN 2 */
+/* USER CODE BEGIN 2 */
   SEGGER_SYSVIEW_Conf();    /* Configure and initialize SystemView  */
   SEGGER_SYSVIEW_Start();   /* Starts SystemView recording*/
   SEGGER_SYSVIEW_OnIdle();  /* Tells SystemView that System is currently in "Idle"*/
-  HAL_StatusTypeDef dma_xfer_status = HAL_I2SEx_TransmitReceive_DMA(&hi2s2, (uint16_t *)dacData, (uint16_t *)adcData, BUFFER_SIZE);
+
+
+  //start i2s with 2048 samples transmission => 4096*u16 words
+  HAL_I2SEx_TransmitReceive_DMA (&hi2s2, txBuf, rxBuf, BLOCK_SIZE_U16);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+
+
+
+
+  
+
   while (1)
   {
-    if(dataReadyFlag)
-    {
-      processData(); // Process the data in the buffers
-    }
+    processData();
   }
-  /* USER CODE END WHILE */
+	/* USER CODE END WHILE */
   /* USER CODE BEGIN 3 */
 
   /* USER CODE END 3 */
@@ -194,7 +225,7 @@ void SystemClock_Config(void)
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
-  /** Configure the main internal regulator output voltage
+  /** Configure the main internal regulator output voltage 
   */
   __HAL_RCC_PWR_CLK_ENABLE();
   __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
@@ -256,7 +287,7 @@ static void MX_I2S2_Init(void)
   hi2s2.Instance = SPI2;
   hi2s2.Init.Mode = I2S_MODE_MASTER_TX;
   hi2s2.Init.Standard = I2S_STANDARD_PHILIPS;
-  hi2s2.Init.DataFormat = I2S_DATAFORMAT_16B;
+  hi2s2.Init.DataFormat = I2S_DATAFORMAT_24B;
   hi2s2.Init.MCLKOutput = I2S_MCLKOUTPUT_ENABLE;
   hi2s2.Init.AudioFreq = I2S_AUDIOFREQ_48K;
   hi2s2.Init.CPOL = I2S_CPOL_LOW;
@@ -272,10 +303,10 @@ static void MX_I2S2_Init(void)
 
 }
 
-/**
+/** 
   * Enable DMA controller clock
   */
-static void MX_DMA_Init(void)
+static void MX_DMA_Init(void) 
 {
 
   /* DMA controller clock enable */
@@ -429,7 +460,7 @@ void Error_Handler(void)
   * @retval None
   */
 void assert_failed(uint8_t *file, uint32_t line)
-{
+{ 
   /* USER CODE BEGIN 6 */
   /* User can add his own implementation to report the file name and line number,
      ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
