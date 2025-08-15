@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include "dsp_configuration.h"
 
-#define DELAY_MAX_LENGTH 24000 // 1 second at 48kHz
+#define DELAY_MAX_LENGTH SAMPLE_RATE/2 // 0.5 second at any sample rate
 
 typedef struct FX_Delay_t{
     float mix;

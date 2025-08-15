@@ -2,6 +2,7 @@
 #include "audio_processing.h"
 #include "reverb.h"
 #include "delay.h"
+#include "distortion.h"
 #include "SEGGER_SYSVIEW.h"
 
 /*rxBuf and txBuf are used for I2S DMA transfer, l_buf_in and
@@ -19,6 +20,7 @@ static float r_buf_out [BLOCK_SIZE_FLOAT*2];
 
 static I2S_DMA_Callback_State_t callback_state = I2S_DMA_CALLBACK_IDLE;
 static FX_Delay_t dly_fx;
+static FX_Overdrive_t od_fx;
 
 void processAudio(void)
 {
@@ -93,6 +95,7 @@ void audio_InitFX(void)
 {
     Reverb_Init();
     FX_Delay_Init(&dly_fx, 500, 0.3f, 0.5f); //500ms delay, 50% mix, 50% feedback
+	FX_Overdrive_Init(&od_fx, 1500.0f, 20.0f, 2000.0f, 1.0f); //1500Hz HPF, 20x pre-gain, 2000Hz LPF, 1.0 damping
 }
 
 uint16_t* audio_getTxBuf(void)

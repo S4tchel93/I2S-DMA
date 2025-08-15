@@ -14,5 +14,6 @@ extern void processAudio(void);
 extern uint16_t* audio_getTxBuf(void);
 extern uint16_t* audio_getRxBuf(void);
 extern void audio_SetCallbackState(I2S_DMA_Callback_State_t state);
+extern void audio_InitFX(void);
 
 #endif // AUDIO_PROCESSING_H
