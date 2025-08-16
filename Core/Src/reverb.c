@@ -13,15 +13,16 @@
 #define l_AP2 46*2
 
 //define wet 0.0 <-> 1.0
-static float wet = 0.5f;
+static float wet = 0.25f;
 //define time delay 0.0 <-> 1.0 (max)
-static float time = 1.0f;
+static float time = 0.7f;
 
 //define pointer limits = delay time
 static int cf0_lim, cf1_lim, cf2_lim, cf3_lim, ap0_lim, ap1_lim, ap2_lim;
 //define buffer for comb- and allpassfilters
-static float cfbuf0[l_CB0], cfbuf1[l_CB1], cfbuf2[l_CB2], cfbuf3[l_CB3];
-static float apbuf0[l_AP0], apbuf1[l_AP1], apbuf2[l_AP2];
+static float  cfbuf1[l_CB1], cfbuf2[l_CB2], apbuf0[l_AP0];
+/*Send these to CCM RAM to make more ram space to include other effects on normal RAM*/
+__attribute__((section(".ccmram")))static float cfbuf0[l_CB0] = {}, cfbuf3[l_CB3] = {}, apbuf2[l_AP2] = {}, apbuf1[l_AP1] = {};
 //feedback defines as of Schroeder
 static float cf0_g = 0.805f, cf1_g=0.827f, cf2_g=0.783f, cf3_g=0.764f;
 static float ap0_g = 0.7f, ap1_g = 0.7f, ap2_g = 0.7f;

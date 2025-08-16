@@ -65,8 +65,10 @@ void processAudio(void)
             //float temp_l_buff;
             //float temp_r_buff;
             //process input samples with selected effect
-	    	l_buf_out[i] = (int) FX_Do_Delay(&dly_fx, l_buf_in[i]);
-	    	r_buf_out[i] = (int) FX_Do_Delay(&dly_fx, r_buf_in[i]);
+			//l_buf_out[i] = l_buf_in[i];
+	    	//r_buf_out[i] = r_buf_in[i];
+	    	l_buf_out[i] = Do_Reverb(FX_Do_Delay(&dly_fx, l_buf_in[i]));
+	    	r_buf_out[i] = Do_Reverb(FX_Do_Delay(&dly_fx, r_buf_in[i]));
 	    }
 
 	    //restore processed float-array to output sample-buffer
@@ -94,7 +96,7 @@ void audio_SetCallbackState(I2S_DMA_Callback_State_t state)
 void audio_InitFX(void)
 {
     Reverb_Init();
-    FX_Delay_Init(&dly_fx, 500, 0.3f, 0.5f); //500ms delay, 50% mix, 50% feedback
+    FX_Delay_Init(&dly_fx, 300, 0.5f, 0.25f); //500ms delay, 50% mix, 50% feedback
 	FX_Overdrive_Init(&od_fx, 1500.0f, 20.0f, 2000.0f, 1.0f); //1500Hz HPF, 20x pre-gain, 2000Hz LPF, 1.0 damping
 }
 

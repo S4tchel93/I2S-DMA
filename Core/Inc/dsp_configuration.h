@@ -7,7 +7,7 @@
 #define SAMPLE_RATE 48000
 
 /*Effects compile settings*/
-//#define REVERB_ENABLE
+#define REVERB_ENABLE
 #define DELAY_ENABLE
 #define OVERDRIVE_ENABLE
 
