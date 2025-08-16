@@ -1,122 +1,215 @@
 #include "distortion.h"
 #include <math.h>
-#include "dsp_configuration.h"
+#include <string.h>
+#include <stdlib.h>
 
-float FX_OD_LPF_INP_COEF[FX_OD_LPF_INP_LENGTH] = { 0.0017537939320576863,0.007340938089113929,0.010684659857249475,
-0.0059465192664006445,-0.0042426166630165525,-0.006997638595382362,0.002026157681616623,0.008949616068073098,0.0008912997218693121,
--0.010828116840199064,-0.005341942938835928,0.011629118328725593,0.011319672204048182,-0.010437864918854862,-0.01855507417411213,
-0.006264099063997508,0.026534382918826812,0.002082360459837173,-0.034558207485434624,-0.016429660182211446,0.04186999401097673,
-0.04105973748393176,-0.04773119656100209,-0.09174975610860517,0.051520616641375305,0.31338828169865396,0.4471688410545182,
-0.31338828169865396,0.051520616641375305,-0.09174975610860517,-0.04773119656100209,0.04105973748393176,0.04186999401097673,
--0.016429660182211446,-0.034558207485434624,0.002082360459837173,0.026534382918826812,0.006264099063997508,-0.01855507417411213,
--0.010437864918854862,0.011319672204048182,0.011629118328725593,-0.005341942938835928,-0.010828116840199064,0.0008912997218693121,
-0.008949616068073098,0.002026157681616623,-0.006997638595382362,-0.0042426166630165525,0.0059465192664006445,0.010684659857249475,
-0.007340938089113929,0.0017537939320576863};
+// ================= Utilities & Config =================
 
-void FX_Overdrive_Init(FX_Overdrive_t* od, float hpfCutoffFrequencyHz, float odPreGain, float lpfCutoffFrequencyHz, float lpfDamping) {
-	od->sampling_time = 1.0f / SAMPLE_RATE;
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
-	// Input High pass filter
-	od->hpfInpBufIn[0] = 0.0f;
-	od->hpfInpBufIn[1] = 0.0f;
-	od->hpfInpBufOut[0] = 0.0f;
-	od->hpfInpBufOut[1] = 0.0f;
-	od->hpfInpWcT = 2.0f * M_PI * hpfCutoffFrequencyHz * od->sampling_time;
-	od->hpfInpOut = 0.0f;
+static int g_fast_tanh = 1;
+void Overdrive_SetFastTanh(int enable){ g_fast_tanh = enable ? 1 : 0; }
 
-	/*input low pass filter*/
-	for(uint8_t i=0; i < FX_OD_LPF_INP_LENGTH; i++) {
-		od->lpfInpBuf[i] = FX_OD_LPF_INP_COEF[i];
-	}
-	od->lpfInpBufIndex = 0;
-	od->lpfInpOut = 0.0f;
+// ================= Biquad IIR =================
 
-	// Overdrive parameters
-	od->preGain = odPreGain;   // Input gain
-	od->threshold = 1.0f / 3.0f; // Clipping threshold
+typedef struct Biquad {
+    float b0, b1, b2, a1, a2;
+    float z1, z2;
+} Biquad;
 
-	/*output low pass filter*/
-	od->lpfOutWcT = 2.0f * M_PI * lpfCutoffFrequencyHz * od->sampling_time;
-	od->lpfOutDamp = lpfDamping;
+static Biquad* biquad_new(void){
+    Biquad *b = (Biquad*)calloc(1, sizeof(Biquad));
+    return b;
 }
 
-void FX_Overdrive_SetHPF(FX_Overdrive_t* od, float hpfcutoffFrequencyHz) {
-	od->hpfInpWcT = 2.0f * M_PI * hpfcutoffFrequencyHz * od->sampling_time;
+static inline float biquad_process(Biquad *s, float x)
+{
+    // Direct Form I Transposed
+    float y = s->b0 * x + s->z1;
+    s->z1 = s->b1 * x - s->a1 * y + s->z2;
+    s->z2 = s->b2 * x - s->a2 * y;
+    return y;
 }
 
-void FX_Overdrive_SetLPF(FX_Overdrive_t* od, float lpfCutoffFrequencyHz, float lpfDamping) {
-	od->lpfOutWcT = 2.0f * M_PI * lpfCutoffFrequencyHz * od->sampling_time;
-	od->lpfOutDamp = lpfDamping;
+static void biquad_reset(Biquad *s){
+    s->z1 = s->z2 = 0.0f;
 }
 
-float FX_Do_Overdrive(FX_Overdrive_t* od, float inSample) {
-	// Low Pass filter anti aliasing
-	od->lpfInpBuf[od->lpfInpBufIndex] = inSample;
-	od->lpfInpBufIndex++;
+// RBJ cookbook coefficient builders (single-precision)
+static void biquad_make_lpf(Biquad *s, float fs, float fc, float Q)
+{
+    float w0 = 2.0f * (float)M_PI * (fc / fs);
+    float c = cosf(w0), sn = sinf(w0);
+    float alpha = sn / (2.0f * Q);
 
-	if(od->lpfInpBufIndex >= FX_OD_LPF_INP_LENGTH) {
-		od->lpfInpBufIndex = 0;
-	}
-	
-	od->lpfInpOut = 0.0f;
-	uint8_t bufIndex = od->lpfInpBufIndex;
-	for(uint8_t i=0; i < FX_OD_LPF_INP_LENGTH; i++) {
-		if(bufIndex == 0) {
-			bufIndex = FX_OD_LPF_INP_LENGTH - 1;
-		}
-		else {
-			bufIndex++;
-		}
-		od->lpfInpOut += od->lpfInpBuf[i] * FX_OD_LPF_INP_COEF[i];
-	}
+    float b0 = (1.0f - c) * 0.5f;
+    float b1 = 1.0f - c;
+    float b2 = (1.0f - c) * 0.5f;
+    float a0 = 1.0f + alpha;
+    float a1 = -2.0f * c;
+    float a2 = 1.0f - alpha;
 
-	/*Variable first order IIR High Pass filter to remove some of the low frequency components*/
-	od->hpfInpBufIn[1] = od->hpfInpBufIn[0];
-	od->hpfInpBufIn[0] = od->lpfInpOut;
+    s->b0 = b0 / a0;
+    s->b1 = b1 / a0;
+    s->b2 = b2 / a0;
+    s->a1 = a1 / a0;
+    s->a2 = a2 / a0;
+}
 
-	od->hpfInpBufOut[1] = od->hpfInpBufOut[0];
-	od->hpfInpBufOut[0] = (2.0f*(od->hpfInpBufIn[0] - od->hpfInpBufIn[1]) + (2.0f - od->hpfInpWcT)*od->hpfInpBufOut[1]) / (2.0f + od->hpfInpWcT);
-	od->hpfInpOut = od->hpfInpBufOut[0];
+static void biquad_make_hpf(Biquad *s, float fs, float fc, float Q)
+{
+    float w0 = 2.0f * (float)M_PI * (fc / fs);
+    float c = cosf(w0), sn = sinf(w0);
+    float alpha = sn / (2.0f * Q);
 
-	/*overdrive*/
-	float clipIn = od->preGain * od->hpfInpOut;
-	float absClipIn = fabs(clipIn);
-	float signClipIn = (clipIn > 0.0f) ? 1.0f : -1.0f;
+    float b0 = (1.0f + c) * 0.5f;
+    float b1 = -(1.0f + c);
+    float b2 = (1.0f + c) * 0.5f;
+    float a0 = 1.0f + alpha;
+    float a1 = -2.0f * c;
+    float a2 = 1.0f - alpha;
 
-	float clipOut = 0.0f;
+    s->b0 = b0 / a0;
+    s->b1 = b1 / a0;
+    s->b2 = b2 / a0;
+    s->a1 = a1 / a0;
+    s->a2 = a2 / a0;
+}
 
-	if(absClipIn < od->threshold) {
-		clipOut = 2.0f * clipIn;
-	}
-	else if(absClipIn >= od->threshold && absClipIn < (2.0f * od->threshold)) {
-		clipOut = signClipIn * (3.0f - (2.0f - 3.0f * absClipIn) * (2.0f - 3.0f * absClipIn)) / 3.0f;
-	}
-	else {
-		clipOut = signClipIn;
-	}
+// Unity biquad (passes through untouched)
+static void biquad_make_unity(Biquad *bq) {
+    bq->b0 = 1.0f; bq->b1 = 0.0f; bq->b2 = 0.0f;
+    bq->a1 = 0.0f; bq->a2 = 0.0f;
+    biquad_reset(bq);
+}
 
-	/*Variable 2nd order IIR low pass filter to remove high frequency components after clipping*/
-	od->lpfOutBufIn[2] = od->lpfOutBufIn[1];
-	od->lpfOutBufIn[1] = od->lpfOutBufIn[0];
-	od->lpfOutBufIn[0] = clipOut;
+// ================= Waveshapers =================
 
-	od->lpfOutBufOut[2] = od->lpfOutBufOut[1];
-	od->lpfOutBufOut[1] = od->lpfOutBufOut[0];
-	od->lpfOutBufOut[0] = (od->lpfOutWcT * od->lpfOutWcT * (od->lpfOutBufIn[0] + 2.0f * od->lpfOutBufIn[1] + od->lpfOutBufIn[2])
-			- 2.0f * (od->lpfOutWcT * od->lpfOutWcT -4.0f) * od->lpfOutBufOut[1]
-			- (4.0f - 4.0f * od->lpfOutDamp * od->lpfOutWcT + od->lpfOutWcT * od->lpfOutWcT) * od->lpfOutBufOut[2]);
-	od->lpfOutBufOut[0] /= (4.0f + 4.0f * od->lpfOutDamp * od->lpfOutWcT + od->lpfOutWcT * od->lpfOutWcT);
-	od->lpfOutOut = od->lpfOutBufOut[0];
+static inline float fast_tanhf(float x)
+{
+    // 3rd-order tanh approx: x*(27 + x^2)/(27 + 9x^2)
+    float x2 = x * x;
+    return x * (27.0f + x2) / (27.0f + 9.0f * x2);
+}
 
-	/*limit output*/
-	od->out = od->lpfOutOut;
+static inline float clip_tanh(float x)
+{
+    return g_fast_tanh ? fast_tanhf(x) : tanhf(x);
+}
 
-	//if (od->out > 1.0f) {
-	//	od->out = 1.0f;
-	//}
-	//else if (od->out < -1.0f) {
-	//	od->out = -1.0f;
-	//}
+static inline float clip_atan(float x)
+{
+    // normalized arctan clip to ~[-1,1] at large |x|
+    return (2.0f / (float)M_PI) * atanf(x);
+}
 
-	return od->out;
+static inline float waveshape(float x, float drive, ODClipType type)
+{
+    float v = x * drive;
+    switch(type){
+        case OD_CLIP_ATAN: return clip_atan(v);
+        case OD_CLIP_TANH:
+        default:           return clip_tanh(v);
+    }
+}
+
+// ================= Overdrive Core =================
+
+void Overdrive_DefaultParams(OverdriveParams *p)
+{
+    p->drive       = 30.0f;     // how hard we hit the clipper
+    p->output      = 1.0f;     // makeup
+    p->hpf_pre_Hz  = 60.0f;    // bass tighten before clip
+    p->lpf_pre_Hz  = 0.0f;     // 0 = disabled (optional extra tighten)
+    p->hpf_post_Hz = 10.0f;    // tiny DC cleanup
+    p->lpf_post_Hz = 10000.0f;  // “Tone” control (fizz tamer)
+    p->anti_fc_Hz  = 0.0f;     // unused in this simplified path
+    p->clip_type   = OD_CLIP_TANH;
+}
+
+void Overdrive_Init(Overdrive_t *od, float sample_rate_hz)
+{
+    memset(od, 0, sizeof(*od));
+    od->fs48 = sample_rate_hz;
+    od->fs96 = sample_rate_hz * 2.0f;
+
+    // allocate filters
+    od->preHPF       = biquad_new();
+    od->preLPF       = biquad_new();
+    od->antiLPF1_up  = biquad_new();
+    od->antiLPF2_up  = biquad_new();
+    od->antiLPF1_down= biquad_new();
+    od->antiLPF2_down= biquad_new();
+    od->postHPF      = biquad_new();
+    od->postLPF      = biquad_new();
+
+    OverdriveParams def;
+    Overdrive_DefaultParams(&def);
+    Overdrive_UpdateParams(od, &def);
+}
+
+void Overdrive_UpdateParams(Overdrive_t *od, const OverdriveParams *p)
+{
+     od->p = *p;
+
+    // sample rates already set in Init
+    float fs = od->fs48;
+
+    // Pre high-pass (always on)
+    biquad_make_hpf(od->preHPF, fs, fmaxf(5.0f, p->hpf_pre_Hz), 0.707f);
+
+    // Optional pre low-pass (0 disables)
+    if (p->lpf_pre_Hz > 0.0f) {
+        biquad_make_lpf(od->preLPF, fs, fminf(fs*0.45f, p->lpf_pre_Hz), 0.707f);
+    } else {
+        // neutralize
+        od->preLPF->b0 = 1.0f; od->preLPF->b1 = od->preLPF->b2 = 0.0f;
+        od->preLPF->a1 = od->preLPF->a2 = 0.0f;
+        biquad_reset(od->preLPF);
+    }
+
+    // Post tone LPF (single tone control)
+    if (p->lpf_post_Hz > 0.0f) {
+        biquad_make_lpf(od->postLPF, fs, fminf(fs*0.45f, p->lpf_post_Hz), 0.707f);
+    } else {
+        biquad_make_unity(od->postLPF);
+    }
+
+    // Tiny post HPF to remove DC
+    biquad_make_hpf(od->postHPF, fs, fmaxf(5.0f, p->hpf_post_Hz), 0.707f);
+
+    // Disable post HPF completely
+    biquad_make_unity(od->postHPF);
+
+    // Clear states to avoid “stuck” old coefficients
+    biquad_reset(od->preHPF);
+    biquad_reset(od->preLPF);
+    biquad_reset(od->postLPF);
+    biquad_reset(od->postHPF);
+}
+
+// Per-sample processing with 2× oversampling inside
+float Overdrive_ProcessSample(Overdrive_t *od, float inSample)
+{
+    // Pre EQ
+    float v = biquad_process(od->preHPF, inSample);
+    v = biquad_process(od->preLPF, v); // no-op if disabled
+
+    // Clipper
+    v = waveshape(v, od->p.drive, od->p.clip_type);
+
+    // Post EQ (tone + DC)
+    //v = biquad_process(od->postLPF, v);
+    //v = biquad_process(od->postHPF, v);
+
+    // Output level
+    v *= od->p.output;
+
+    // No hard limiter here — let the waveshaper be the limiter.
+    // If you want a gentle ceiling, uncomment:
+    // v = clip_tanh(v);
+
+    return v;
 }

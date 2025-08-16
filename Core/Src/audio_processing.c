@@ -20,7 +20,7 @@ static float r_buf_out [BLOCK_SIZE_FLOAT*2];
 
 static I2S_DMA_Callback_State_t callback_state = I2S_DMA_CALLBACK_IDLE;
 static FX_Delay_t dly_fx;
-static FX_Overdrive_t od_fx;
+static Overdrive_t od_fx;
 
 void processAudio(void)
 {
@@ -62,13 +62,13 @@ void processAudio(void)
 
 	    for (int i=offset_w_ptr; i<offset_w_ptr+BLOCK_SIZE_FLOAT; i++)
         {   
-            //float temp_l_buff;
-            //float temp_r_buff;
+			float temp_l = Overdrive_ProcessSample(&od_fx, l_buf_in[i]);
+			float temp_r = Overdrive_ProcessSample(&od_fx, r_buf_in[i]);
+			temp_l = FX_Do_Delay(&dly_fx, temp_l);
+			temp_r = FX_Do_Delay(&dly_fx, temp_r);
             //process input samples with selected effect
-			//l_buf_out[i] = l_buf_in[i];
-	    	//r_buf_out[i] = r_buf_in[i];
-	    	l_buf_out[i] = Do_Reverb(FX_Do_Delay(&dly_fx, l_buf_in[i]));
-	    	r_buf_out[i] = Do_Reverb(FX_Do_Delay(&dly_fx, r_buf_in[i]));
+	    	l_buf_out[i] = Do_Reverb(temp_l);
+	    	r_buf_out[i] = Do_Reverb(temp_r);
 	    }
 
 	    //restore processed float-array to output sample-buffer
@@ -96,8 +96,8 @@ void audio_SetCallbackState(I2S_DMA_Callback_State_t state)
 void audio_InitFX(void)
 {
     Reverb_Init();
-    FX_Delay_Init(&dly_fx, 300, 0.5f, 0.25f); //500ms delay, 50% mix, 50% feedback
-	FX_Overdrive_Init(&od_fx, 1500.0f, 20.0f, 2000.0f, 1.0f); //1500Hz HPF, 20x pre-gain, 2000Hz LPF, 1.0 damping
+    FX_Delay_Init(&dly_fx, 400, 0.25f, 0.5f); //500ms delay, 50% mix, 50% feedback
+	Overdrive_Init(&od_fx, (float)SAMPLE_RATE); //Initialize overdrive with 48kHz sample rate
 }
 
 uint16_t* audio_getTxBuf(void)

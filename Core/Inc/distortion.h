@@ -1,45 +1,61 @@
-#ifndef DISTORTION_H
-#define DISTORTION_H
+#ifndef OVERDRIVE_H
+#define OVERDRIVE_H
 
 #include <stdint.h>
-//extern float Do_Distortion (float insample);
+#include <stddef.h>
 
-/* Input low pass filter fc = (fs/4), 1dB ripple, 60dB attenuation at stop-band, 53 taps*/
-#define FX_OD_LPF_INP_LENGTH 53
-extern float FX_OD_LPF_INP[FX_OD_LPF_INP_LENGTH];
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-typedef struct FX_Overdrive_t {
-    float sampling_time;
+typedef enum {
+    OD_CLIP_TANH = 0,
+    OD_CLIP_ATAN = 1
+} ODClipType;
 
-    // Input Low pass filter
-    float lpfInpBuf[FX_OD_LPF_INP_LENGTH];
-    uint8_t lpfInpBufIndex;
-    float lpfInpOut;
+typedef struct {
+    // User parameters
+    float drive;        // Input gain into waveshaper (typ 1.0..20.0)
+    float output;       // Output level trim (0..2)
+    float hpf_pre_Hz;   // Pre-HPF cutoff (typ ~40 Hz)
+    float lpf_pre_Hz;   // Pre-LPF cutoff (shape brightness into clip) (typ 4–8 kHz)
+    float hpf_post_Hz;  // Post-HPF cutoff (typ 60–100 Hz)
+    float lpf_post_Hz;  // Post-LPF cutoff (typ 5–8 kHz)
+    float anti_fc_Hz;   // Anti-imaging/alias cutoff at 96 kHz (typ 18–20 kHz)
+    ODClipType clip_type;
+} OverdriveParams;
 
-    // Input High pass filter
-    float hpfInpBufIn[2];
-    float hpfInpBufOut[2];
-    float hpfInpWcT;
-    float hpfInpOut;
+typedef struct {
+    // Internal biquad state
+    struct Biquad *preHPF;
+    struct Biquad *preLPF;
+    struct Biquad *antiLPF1_up;
+    struct Biquad *antiLPF2_up;
+    struct Biquad *antiLPF1_down;
+    struct Biquad *antiLPF2_down;
+    struct Biquad *postHPF;
+    struct Biquad *postLPF;
 
-    // Overdrive parameters
-    float preGain;   // Input gain
-    float threshold; // Clipping threshold
+    // Cached samplerates
+    float fs48;
+    float fs96;
 
-    /*output low pass filter*/
-    float lpfOutBufIn[3];
-    float lpfOutBufOut[3];
-    float lpfOutWcT;
-    float lpfOutDamp;
-    float lpfOutOut;
+    // Parameters
+    OverdriveParams p;
 
-    float out;
+} Overdrive_t;
 
-} FX_Overdrive_t;
+void Overdrive_DefaultParams(OverdriveParams *p);
+void Overdrive_Init(Overdrive_t *od, float sample_rate_hz);
+void Overdrive_UpdateParams(Overdrive_t *od, const OverdriveParams *p);
 
-void    FX_Overdrive_Init(FX_Overdrive_t* od, float hpfCutoffFrequencyHz, float odPreGain, float lpfCutoffFrequencyHz, float lpfDamping);
-void    FX_Overdrive_SetHPF(FX_Overdrive_t* od, float hpfcutoffFrequencyHz);
-void    FX_Overdrive_SetLPF(FX_Overdrive_t* od, float lpfCutoffFrequencyHz, float lpfDamping);
-float   FX_Do_Overdrive(FX_Overdrive_t* od, float inSample);
+float Overdrive_ProcessSample(Overdrive_t *od, float inSample);
 
-#endif // DISTORTION_H
+// Optional: fast tanh approx enable (set nonzero to slightly faster, slightly less accurate)
+void Overdrive_SetFastTanh(int enable);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif // OVERDRIVE_H
