@@ -79,18 +79,18 @@ void processAudio(void)
             float temp_r = 0.0f;
 
             /* Call your DSP function (DS1 / Overdrive / etc) that expects normalized floats */
-            //temp_l = DS1_ProcessSample(&ds1_fx, inL);
-            //temp_r = DS1_ProcessSample(&ds1_fx, inR);
+            temp_l = DS1_ProcessSample(&ds1_fx, inL);
+            temp_r = DS1_ProcessSample(&ds1_fx, inR);
 
             /* Optionally chain other FX here */
-            //temp_l = FX_Do_Delay(&dly_fx, temp_l);
-            //temp_r = FX_Do_Delay(&dly_fx, temp_r);
-            temp_l = SpringReverb_ProcessSample(&spring_reverb_fx, inL);
-            temp_r = SpringReverb_ProcessSample(&spring_reverb_fx, inR);
+            temp_l = FX_Do_Delay(&dly_fx, temp_l);
+            temp_r = FX_Do_Delay(&dly_fx, temp_r);
+            temp_l = SpringReverb_ProcessSample(&spring_reverb_fx, temp_l);
+            temp_r = SpringReverb_ProcessSample(&spring_reverb_fx, temp_r);
 
             /* Store normalized result back (keep floats in [-1,1]) for clarity */
             l_buf_out[i] = temp_l;
-            r_buf_out[i] = temp_r;
+            r_buf_out[i] = temp_r; // For mono processing, use the same output for both channels
         }
 
         /* ---------- OUTPUT: convert normalized floats back to 24-bit MSB-aligned words ---------- */
@@ -145,7 +145,7 @@ void audio_InitFX(void)
     SpringReverb_Init(&spring_reverb_fx, springBuffer, SPRING_BUFFER_SIZE, 0.5f, 0.3f);
     FX_Delay_Init(&dly_fx, 400, 0.25f, 0.5f); //500ms delay, 50% mix, 50% feedback
 	DS1_Init(&ds1_fx, (float)SAMPLE_RATE); //Initialize overdrive with 48kHz sample rate
-	DS1_SetParams(&ds1_fx, 60.0f, 2.0f, 4500.0f, 100.0f, CLIP_HARD); //Set parameters: drive=30, output=1, tone=6kHz, hpf=720Hz, clipping type=hard
+	DS1_SetParams(&ds1_fx, 40.0f, 1.0f, 4000.0f, 100.0f, CLIP_HARD); //Set parameters: drive=30, output=1, tone=6kHz, hpf=720Hz, clipping type=hard
 }
 
 uint16_t* audio_getTxBuf(void)

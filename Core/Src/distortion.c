@@ -71,8 +71,8 @@ void DS1_SetParams(DS1 *fx, float drive, float output, float tone_hz, float hpf_
 static inline float clip_sample(float x, ClipType type){
     switch(type){
         case CLIP_HARD:
-            if (x > 0.2f) x = 0.2f;
-            if (x < -0.2f) x = -0.2f;
+            if (x > 0.3f) x = 0.3f;
+            if (x < -0.3f) x = -0.3f;
             return x;
         case CLIP_TANH:
             return tanhf(x);
