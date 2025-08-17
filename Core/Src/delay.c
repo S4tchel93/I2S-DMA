@@ -43,5 +43,11 @@ float FX_Do_Delay(FX_Delay_t* dly, float inSample) {
         dly->lineIndex = 0;
     }
 
+    if (dly->out < -1.0f) {
+        dly->out = -1.0f; // Clamp output to -1.0
+    } else if (dly->out > 1.0f) {
+        dly->out = 1.0f; // Clamp output to 1.0
+    }
+
     return dly->out;
 }
