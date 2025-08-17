@@ -3,6 +3,7 @@
 #include "reverb.h"
 #include "delay.h"
 #include "distortion.h"
+#include "spring_verb.h"
 #include "SEGGER_SYSVIEW.h"
 #include <stdint.h>
 #include <math.h>
@@ -28,6 +29,10 @@ static float r_buf_out [BLOCK_SIZE_FLOAT*2];
 static I2S_DMA_Callback_State_t callback_state = I2S_DMA_CALLBACK_IDLE;
 static FX_Delay_t dly_fx;
 static DS1 ds1_fx;
+static SpringReverb spring_reverb_fx;
+
+#define SPRING_BUFFER_SIZE 8000
+static float springBuffer[SPRING_BUFFER_SIZE];
 
 void processAudio(void)
 {
@@ -74,14 +79,14 @@ void processAudio(void)
             float temp_r = 0.0f;
 
             /* Call your DSP function (DS1 / Overdrive / etc) that expects normalized floats */
-            temp_l = DS1_ProcessSample(&ds1_fx, inL);
-            temp_r = DS1_ProcessSample(&ds1_fx, inR);
+            //temp_l = DS1_ProcessSample(&ds1_fx, inL);
+            //temp_r = DS1_ProcessSample(&ds1_fx, inR);
 
             /* Optionally chain other FX here */
-            temp_l = FX_Do_Delay(&dly_fx, temp_l);
-            temp_r = FX_Do_Delay(&dly_fx, temp_r);
-            //temp_l = Do_Reverb(temp_l);
-            //temp_r = Do_Reverb(temp_r);
+            //temp_l = FX_Do_Delay(&dly_fx, temp_l);
+            //temp_r = FX_Do_Delay(&dly_fx, temp_r);
+            temp_l = SpringReverb_ProcessSample(&spring_reverb_fx, inL);
+            temp_r = SpringReverb_ProcessSample(&spring_reverb_fx, inR);
 
             /* Store normalized result back (keep floats in [-1,1]) for clarity */
             l_buf_out[i] = temp_l;
@@ -137,9 +142,10 @@ void audio_SetCallbackState(I2S_DMA_Callback_State_t state)
 void audio_InitFX(void)
 {
     Reverb_Init();
+    SpringReverb_Init(&spring_reverb_fx, springBuffer, SPRING_BUFFER_SIZE, 0.5f, 0.3f);
     FX_Delay_Init(&dly_fx, 400, 0.25f, 0.5f); //500ms delay, 50% mix, 50% feedback
 	DS1_Init(&ds1_fx, (float)SAMPLE_RATE); //Initialize overdrive with 48kHz sample rate
-	DS1_SetParams(&ds1_fx, 30.0f, 1.0f, 6000.0f);
+	DS1_SetParams(&ds1_fx, 60.0f, 2.0f, 4500.0f, 100.0f, CLIP_HARD); //Set parameters: drive=30, output=1, tone=6kHz, hpf=720Hz, clipping type=hard
 }
 
 uint16_t* audio_getTxBuf(void)

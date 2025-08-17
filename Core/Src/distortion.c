@@ -7,10 +7,7 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-// ---------- Simple 1-pole lowpass filter ----------
-typedef struct {
-    float a0, b1, z1;
-} OnePoleLPF;
+// ---------- Simple 1-pole LPF ----------
 
 static void lpf_init(OnePoleLPF *f){ f->a0=1.0f; f->b1=0.0f; f->z1=0.0f; }
 
@@ -28,41 +25,79 @@ static inline float lpf_process(OnePoleLPF *f, float x){
     return f->z1;
 }
 
-// ---------- DS1 Effect ----------
-typedef struct {
-    float drive;
-    float output;
-    OnePoleLPF tone;
-} DS1_Impl;
+// ---------- Simple 1-pole HPF ----------
 
-void DS1_Init(DS1 *fx, float sample_rate){
-    DS1_Impl *impl = (DS1_Impl*)fx;
-    impl->drive = 30.0f;
-    impl->output = 1.0f;
-    lpf_init(&impl->tone);
-    lpf_set(&impl->tone, sample_rate, 6000.0f); // DS-1 tone ~6kHz
+
+static void hpf_init(OnePoleHPF *f){ f->a0=1.0f; f->b1=0.0f; f->z1=0.0f; }
+
+static void hpf_set(OnePoleHPF *f, float sample_rate, float cutoff_hz){
+    if (cutoff_hz <= 0.0f || cutoff_hz >= sample_rate*0.45f){
+        f->a0 = 1.0f; f->b1 = 0.0f; return; // bypass
+    }
+    float x = expf(-2.0f*M_PI*cutoff_hz/sample_rate);
+    f->a0 = (1.0f + x) / 2.0f;
+    f->b1 = x;
 }
 
-void DS1_SetParams(DS1 *fx, float drive, float output, float tone_hz){
-    DS1_Impl *impl = (DS1_Impl*)fx;
-    impl->drive = drive;
-    impl->output = output;
-    lpf_set(&impl->tone, 48000.0f, tone_hz); // <- change fs if not 48k
+static inline float hpf_process(OnePoleHPF *f, float x){
+    float y = f->a0 * (x - f->z1) + f->b1 * f->z1;
+    f->z1 = x;
+    return y;
+}
+
+// ---------- DS1 Effect ----------
+void DS1_Init(DS1 *fx, float sample_rate){
+    memset(fx, 0, sizeof(*fx));
+    fx->sample_rate = sample_rate;
+    fx->drive = 30.0f;
+    fx->output = 1.0f;
+    fx->type = CLIP_HARD;
+
+    lpf_init(&fx->tone);
+    lpf_set(&fx->tone, sample_rate, 6000.0f); // DS-1 tone LPF ~6 kHz
+
+    hpf_init(&fx->hpf);
+    hpf_set(&fx->hpf, sample_rate, 720.0f);   // DS-1 input HPF ~720 Hz
+}
+
+void DS1_SetParams(DS1 *fx, float drive, float output, float tone_hz, float hpf_hz, ClipType type){
+    fx->drive = drive;
+    fx->output = output;
+    fx->type = type;
+    lpf_set(&fx->tone, fx->sample_rate, tone_hz);
+    hpf_set(&fx->hpf, fx->sample_rate, hpf_hz);
+}
+
+static inline float clip_sample(float x, ClipType type){
+    switch(type){
+        case CLIP_HARD:
+            if (x > 0.2f) x = 0.2f;
+            if (x < -0.2f) x = -0.2f;
+            return x;
+        case CLIP_TANH:
+            return tanhf(x);
+        case CLIP_ASYM:
+            if (x > 0.3f) x = 0.3f;
+            if (x < -0.2f) x = -0.2f;
+            return x;
+        default:
+            return x;
+    }
 }
 
 float DS1_ProcessSample(DS1 *fx, float in){
-    DS1_Impl *impl = (DS1_Impl*)fx;
+    // 1. Input HPF
+    float x = hpf_process(&fx->hpf, in);
 
-    // 1. Pre-gain
-    float x = in * impl->drive;
+    // 2. Pre-gain
+    x *= fx->drive;
 
-    // 2. Hard clip (DS1 diodes)
-    if(x > 0.3f) x = 0.3f;
-    if(x < -0.3f) x = -0.3f;
+    // 3. Clipping
+    x = clip_sample(x, fx->type);
 
-    // 3. Post "tone" LPF
-    x = lpf_process(&impl->tone, x);
+    // 4. Tone shaping LPF
+    x = lpf_process(&fx->tone, x);
 
-    // 4. Output trim
-    return x * impl->output;
+    // 5. Output level
+    return x * fx->output;
 }

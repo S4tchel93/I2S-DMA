@@ -24,6 +24,7 @@ set(MX_Application_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/reverb.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/delay.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/distortion.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/spring_verb.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/stm32f4xx_it.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/stm32f4xx_hal_msp.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/sysmem.c
